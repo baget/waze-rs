@@ -1,0 +1,357 @@
+use crate::helpers::{Region, VehicleType};
+pub use crate::waze_structs::{Bound, Coordinates, WazeAddressAnswer, WazeResult};
+use reqwest::header::{HeaderMap, HeaderValue, REFERER, USER_AGENT};
+use serde_json::Value;
+use std::collections::HashMap;
+
+/// A struct representing a Waze route calculator.
+#[derive(Debug)]
+pub struct WazeRouteCalculator {
+    pub region: Region,
+    pub vehicle_type: VehicleType,
+    pub start_coords: Option<Coordinates>,
+    pub end_coords: Option<Coordinates>,
+    route_options: HashMap<String, String>,
+    avoid_subscription_roads: bool,
+
+    base_url: String,
+}
+
+impl WazeRouteCalculator {
+    /// Creates a new `WazeRouteCalculator` instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `region` - The region for the route.
+    /// * `vehicle_type` - The type of vehicle.
+    /// * `avoid_toll_roads` - Whether to avoid toll roads.
+    /// * `avoid_subscription_roads` - Whether to avoid subscription roads.
+    /// * `avoid_ferries` - Whether to avoid ferries.
+    ///
+    /// # Returns
+    ///
+    /// A new `WazeRouteCalculator` instance.
+    pub fn new(
+        region: Region,
+        vehicle_type: VehicleType,
+        avoid_toll_roads: bool,
+        avoid_subscription_roads: bool,
+        avoid_ferries: bool,
+    ) -> Self {
+        let mut route_options = HashMap::new();
+        route_options.insert("AVOID_TRAILS".to_string(), "t".to_string());
+        route_options.insert(
+            "AVOID_TOLL_ROADS".to_string(),
+            if avoid_toll_roads {
+                "t".to_string()
+            } else {
+                "f".to_string()
+            },
+        );
+        route_options.insert(
+            "AVOID_FERRIES".to_string(),
+            if avoid_ferries {
+                "t".to_string()
+            } else {
+                "f".to_string()
+            },
+        );
+
+        WazeRouteCalculator {
+            region,
+            vehicle_type,
+            start_coords: None,
+            end_coords: None,
+            avoid_subscription_roads,
+            route_options,
+            base_url: Self::WAZE_URL.to_string(),
+        }
+    }
+
+    /// Sets the start and end coordinates based on the provided addresses.
+    ///
+    /// # Arguments
+    ///
+    /// * `start_address` - The starting address.
+    /// * `end_address` - The ending address.
+    ///
+    /// # Returns
+    ///
+    /// A result containing a mutable reference to the `WazeRouteCalculator` instance or an error.
+    pub fn with_address(
+        &mut self,
+        start_address: &str,
+        end_address: &str,
+    ) -> anyhow::Result<&mut Self> {
+        self.start_coords = Some(self.address_to_coords(start_address)?);
+        self.end_coords = Some(self.address_to_coords(end_address)?);
+        Ok(self)
+    }
+
+    pub fn with_base_url(&mut self, base_url: &str) -> &mut Self {
+        self.base_url = base_url.to_string();
+        self
+    }
+
+    /// Constructs the headers required for the HTTP request.
+    ///
+    /// # Returns
+    ///
+    /// A `HeaderMap` containing the necessary headers.
+    fn construct_headers(&self) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0"));
+        headers.insert(
+            REFERER,
+            HeaderValue::from_str(self.base_url.as_str()).unwrap(),
+        );
+        headers
+    }
+
+    /// Converts an address to coordinates.
+    ///
+    /// # Arguments
+    ///
+    /// * `address` - The address to convert.
+    ///
+    /// # Returns
+    ///
+    /// A result containing the coordinates or an error.
+    pub fn address_to_coords(&self, address: &str) -> anyhow::Result<Coordinates> {
+        let base_coords = WazeRouteCalculator::BASE_COORDS[self.region as usize].1;
+        let get_cord_path = WazeRouteCalculator::COORD_SERVERS[self.region as usize].1;
+
+        let url = format!("{}{}", self.base_url, get_cord_path);
+
+        let lon_binding = base_coords.lon.to_string();
+        let lat_binding = base_coords.lat.to_string();
+        let params = [
+            ("q", address),
+            ("lang", "eng"),
+            ("lang", "eng"),
+            ("origin", "livemap"),
+            ("lon", lon_binding.as_str()),
+            ("lat", lat_binding.as_str()),
+        ];
+
+        let client = reqwest::blocking::Client::new();
+        let response = client
+            .get(url)
+            .query(&params)
+            .headers(self.construct_headers())
+            .send()?;
+
+        if response.status().is_success() {
+            let address_answer = response.json::<Value>()?;
+
+            if !address_answer.is_array() {
+                return Err(anyhow::anyhow!("Failed to get coordinates"));
+            }
+
+            for answer in address_answer.as_array().unwrap() {
+                if answer.get("city").is_some() {
+                    let mut coords = Coordinates {
+                        latitude: answer["location"]["lat"].as_f64().unwrap_or_default(),
+                        longitude: answer["location"]["lon"].as_f64().unwrap_or_default(),
+                        bound: None,
+                    };
+
+                    if let Some(bound) = answer.get("bounds") {
+                        if bound.is_null() {
+                            return Ok(coords);
+                        }
+
+                        let top = bound.get("top").unwrap().as_f64().unwrap_or_default();
+                        let bottom = bound.get("bottom").unwrap().as_f64().unwrap_or_default();
+                        let left = bound.get("left").unwrap().as_f64().unwrap_or_default();
+                        let right = bound.get("right").unwrap().as_f64().unwrap_or_default();
+
+                        let new_bound = Bound {
+                            top: top.max(bottom),
+                            bottom: top.min(bottom),
+                            left: left.min(right),
+                            right: left.max(right),
+                        };
+
+                        coords.bound = Some(new_bound);
+                    }
+                    return Ok(coords);
+                }
+            }
+            Err(anyhow::anyhow!("Failed to get coordinates"))
+        } else {
+            Err(anyhow::anyhow!("Failed to get coordinates"))
+        }
+    }
+
+    fn get_route(&self) -> anyhow::Result<Vec<WazeResult>> {
+        let routing_server = WazeRouteCalculator::ROUTING_SERVERS[self.region as usize].1;
+        let from_str = format!(
+            "x:{} y:{}",
+            self.start_coords.unwrap().longitude,
+            self.start_coords.unwrap().latitude
+        );
+        let to_str = format!(
+            "x:{} y:{}",
+            self.end_coords.unwrap().longitude,
+            self.end_coords.unwrap().latitude
+        );
+        let options_str = self
+            .route_options
+            .iter()
+            .map(|(opt, value)| format!("{}:{}", opt, value))
+            .collect::<Vec<_>>()
+            .join(",");
+
+        //TODO: Handle nPaths and time_delta
+        let mut params = vec![
+            ("from", from_str.as_str()),
+            ("to", to_str.as_str()),
+            ("at", "0"),
+            ("returnJSON", "true"),
+            ("returnGeometries", "true"),
+            ("returnInstructions", "true"),
+            ("timeout", "60000"),
+            ("nPaths", "1"),
+            ("options", &options_str),
+        ];
+
+        if self.vehicle_type != VehicleType::CAR {
+            params.push(("vehicleType", self.vehicle_type.to_string()));
+        }
+
+        if !self.avoid_subscription_roads {
+            params.push(("subscription", "*"));
+        }
+
+        let url = format!("{}{}", self.base_url, routing_server);
+
+        let client = reqwest::blocking::Client::new();
+        let query_res = client
+            .get(url)
+            .query(&params)
+            .headers(self.construct_headers())
+            .send()?;
+
+        if query_res.status().is_success() {
+            let waze_route_answer: Value = query_res.json()?;
+
+            if waze_route_answer.get("error").is_none() {
+                if let Some(response) = waze_route_answer.get("response") {
+                    if let Some(alternatives) = response.get("alternatives") {
+                        return Ok(alternatives
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|x| serde_json::from_value(x.clone()).unwrap())
+                            .collect());
+                    }
+
+                    if let Some(results) = response.get("results") {
+                        Ok(serde_json::from_value(results.clone())?)
+                    } else {
+                        Err(anyhow::anyhow!("Failed to get route"))
+                    }
+                } else {
+                    Err(anyhow::anyhow!("Failed to get route"))
+                }
+            } else {
+                let error = waze_route_answer["error"].as_str().unwrap().to_string();
+                Err(anyhow::anyhow!(error))
+            }
+        } else {
+            Err(anyhow::anyhow!("Failed to get route"))
+        }
+    }
+
+    /// Calculates the route time and distance based on the provided results.
+    ///
+    /// # Arguments
+    ///
+    /// * `results` - A slice of `WazeResult` containing the route segments.
+    /// * `real_time` - A boolean indicating whether to use real-time data.
+    /// * `stop_at_bounds` - A boolean indicating whether to stop at bounds.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing the route time in minutes and the route distance in kilometers.
+    pub fn add_up_route(
+        &self,
+        results: &[WazeResult],
+        real_time: bool,
+        stop_at_bounds: bool,
+    ) -> (f64, f64) {
+        let start_bounds = self
+            .start_coords
+            .unwrap_or_default()
+            .bound
+            .unwrap_or_default();
+        let end_bounds = self
+            .end_coords
+            .unwrap_or_default()
+            .bound
+            .unwrap_or_default();
+
+        /// Checks if a target value is between a minimum and maximum value.
+        ///
+        /// # Arguments
+        ///
+        /// * `target` - The target value to check.
+        /// * `min` - The minimum value.
+        /// * `max` - The maximum value.
+        ///
+        /// # Returns
+        ///
+        /// A boolean indicating whether the target is between the min and max values.
+        fn between(target: f64, min: f64, max: f64) -> bool {
+            target > min && target < max
+        }
+
+        let (time, distance) = results
+            .iter()
+            .fold((0, 0), |(mut time, mut distance), segment| {
+                if stop_at_bounds {
+                    if let Some(path) = &segment.path {
+                        let x = path.x;
+                        let y = path.y;
+                        if (between(x, start_bounds.left, start_bounds.right)
+                            || between(x, end_bounds.left, end_bounds.right))
+                            && (between(y, start_bounds.bottom, start_bounds.top)
+                                || between(y, end_bounds.bottom, end_bounds.top))
+                        {
+                            return (time, distance);
+                        }
+                    }
+                }
+
+                if real_time {
+                    time += segment.cross_time;
+                } else {
+                    time += segment.cross_time_without_real_time;
+                }
+                distance += segment.length;
+
+                (time, distance)
+            });
+
+        let route_time = time as f64 / 60.0;
+        let route_distance = distance as f64 / 1000.0;
+        (route_time, route_distance)
+    }
+
+    /// Calculates the best route info by calling `get_route` and using `add_up_route` to calculate the route time and distance.
+    ///
+    /// # Returns
+    ///
+    /// A result containing a tuple with the route time in minutes and the route distance in kilometers, or an error.
+    pub fn calculate_route(&self) -> anyhow::Result<(std::time::Duration, f64)> {
+        let route = self.get_route()?;
+
+        let (route_time, route_distance) = self.add_up_route(&route, true, false);
+
+        Ok((
+            std::time::Duration::from_secs(route_time as u64 * 60),
+            route_distance,
+        ))
+    }
+}
