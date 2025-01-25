@@ -3,7 +3,27 @@ pub use crate::waze_structs::{Bound, Coordinates, WazeAddressAnswer, WazeResult}
 use reqwest::header::{HeaderMap, HeaderValue, REFERER, USER_AGENT};
 use serde_json::Value;
 use std::collections::HashMap;
+use thiserror::Error;
 
+#[derive(Error, Debug)]
+pub enum WazeRouteCalculatorError {
+    #[error("Failed to get coordinates")]
+    FailedToGetCoordinates,
+    #[error("Failed to get route")]
+    FailedToGetRoute,
+
+    #[error("Waze API error: {0}")]
+    WazeApiError(String),
+
+    #[error("Networking error")]
+    NetworkError(#[from] reqwest::Error),
+
+    #[error("Serde error")]
+    SerializationError(#[from] serde_json::Error),
+
+    #[error("Unknown error")]
+    UnknownError,
+}
 /// A struct representing a Waze route calculator.
 #[derive(Debug)]
 pub struct WazeRouteCalculator {
@@ -82,7 +102,7 @@ impl WazeRouteCalculator {
         &mut self,
         start_address: &str,
         end_address: &str,
-    ) -> anyhow::Result<&mut Self> {
+    ) -> Result<&mut Self, WazeRouteCalculatorError> {
         self.start_coords = Some(self.address_to_coords(start_address)?);
         self.end_coords = Some(self.address_to_coords(end_address)?);
         Ok(self)
@@ -117,7 +137,7 @@ impl WazeRouteCalculator {
     /// # Returns
     ///
     /// A result containing the coordinates or an error.
-    pub fn address_to_coords(&self, address: &str) -> anyhow::Result<Coordinates> {
+    pub fn address_to_coords(&self, address: &str) -> Result<Coordinates,WazeRouteCalculatorError> {
         let base_coords = WazeRouteCalculator::BASE_COORDS[self.region as usize].1;
         let get_cord_path = WazeRouteCalculator::COORD_SERVERS[self.region as usize].1;
 
@@ -145,7 +165,7 @@ impl WazeRouteCalculator {
             let address_answer = response.json::<Value>()?;
 
             if !address_answer.is_array() {
-                return Err(anyhow::anyhow!("Failed to get coordinates"));
+                return Err(WazeRouteCalculatorError::FailedToGetCoordinates);
             }
 
             for answer in address_answer.as_array().unwrap() {
@@ -178,13 +198,13 @@ impl WazeRouteCalculator {
                     return Ok(coords);
                 }
             }
-            Err(anyhow::anyhow!("Failed to get coordinates"))
+            Err(WazeRouteCalculatorError::FailedToGetCoordinates)
         } else {
-            Err(anyhow::anyhow!("Failed to get coordinates"))
+            Err(WazeRouteCalculatorError::FailedToGetCoordinates)
         }
     }
 
-    fn get_route(&self) -> anyhow::Result<Vec<WazeResult>> {
+    fn get_route(&self) -> Result<Vec<WazeResult>, WazeRouteCalculatorError> {
         let routing_server = WazeRouteCalculator::ROUTING_SERVERS[self.region as usize].1;
         let from_str = format!(
             "x:{} y:{}",
@@ -250,17 +270,17 @@ impl WazeRouteCalculator {
                     if let Some(results) = response.get("results") {
                         Ok(serde_json::from_value(results.clone())?)
                     } else {
-                        Err(anyhow::anyhow!("Failed to get route"))
+                        Err(WazeRouteCalculatorError::FailedToGetRoute)
                     }
                 } else {
-                    Err(anyhow::anyhow!("Failed to get route"))
+                    Err(WazeRouteCalculatorError::FailedToGetRoute)
                 }
             } else {
                 let error = waze_route_answer["error"].as_str().unwrap().to_string();
-                Err(anyhow::anyhow!(error))
+                Err(WazeRouteCalculatorError::WazeApiError(error))
             }
         } else {
-            Err(anyhow::anyhow!("Failed to get route"))
+            Err(WazeRouteCalculatorError::FailedToGetRoute)
         }
     }
 
@@ -344,7 +364,7 @@ impl WazeRouteCalculator {
     /// # Returns
     ///
     /// A result containing a tuple with the route time in minutes and the route distance in kilometers, or an error.
-    pub fn calculate_route(&self) -> anyhow::Result<(std::time::Duration, f64)> {
+    pub fn calculate_route(&self) -> Result<(std::time::Duration, f64), WazeRouteCalculatorError> {
         let route = self.get_route()?;
 
         let (route_time, route_distance) = self.add_up_route(&route, true, false);
