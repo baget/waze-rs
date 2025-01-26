@@ -35,6 +35,7 @@ pub struct WazeRouteCalculatorBuilder {
     pub avoid_toll_roads: bool,
     pub avoid_subscription_roads: bool,
     pub avoid_ferries: bool,
+    pub base_url: String,
 }
 
 impl WazeRouteCalculatorBuilder {
@@ -48,6 +49,7 @@ impl WazeRouteCalculatorBuilder {
     ///
     /// The updated `WazeRouteCalculatorBuilder` instance.
     pub fn set_region(mut self, region: Region) -> Self {
+        debug!("region: {:?}", region);
         self.region = region;
         self
     }
@@ -62,37 +64,65 @@ impl WazeRouteCalculatorBuilder {
     ///
     /// The updated `WazeRouteCalculatorBuilder` instance.
     pub fn set_vehicle_type(mut self, vehicle_type: VehicleType) -> Self {
+        debug!("vehicle_type: {:?}", vehicle_type);
         self.vehicle_type = vehicle_type;
         self
     }
 
-    /// Sets the option to avoid subscription roads.
+    /// Sets whether to avoid subscription roads.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - A boolean indicating whether to avoid subscription roads.
     ///
     /// # Returns
     ///
     /// The updated `WazeRouteCalculatorBuilder` instance.
-    pub fn set_avoid_subscription_roads(mut self) -> Self {
-        self.avoid_subscription_roads = true;
+    pub fn set_avoid_subscription_roads(mut self, value: bool) -> Self {
+        self.avoid_subscription_roads = value;
         self
     }
 
-    /// Sets the option to avoid toll roads.
+    /// Sets whether to avoid toll roads.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - A boolean indicating whether to avoid toll roads.
     ///
     /// # Returns
     ///
     /// The updated `WazeRouteCalculatorBuilder` instance.
-    pub fn set_avoid_toll_roads(mut self) -> Self {
-        self.avoid_toll_roads = true;
+    pub fn set_avoid_toll_roads(mut self, value: bool) -> Self {
+        self.avoid_toll_roads = value;
         self
     }
 
-    /// Sets the option to avoid ferries.
+    /// Sets whether to avoid ferries.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - A boolean indicating whether to avoid ferries.
     ///
     /// # Returns
     ///
     /// The updated `WazeRouteCalculatorBuilder` instance.
-    pub fn set_avoid_ferries(mut self) -> Self {
-        self.avoid_ferries = true;
+    pub fn set_avoid_ferries(mut self, value: bool) -> Self {
+        self.avoid_ferries = value;
+        self
+    }
+
+    /// Sets the base URL for the route calculator.
+    ///
+    /// # Arguments
+    ///
+    /// * `base_url` - The base URL to set.
+    ///
+    /// # Returns
+    ///
+    /// The updated `WazeRouteCalculatorBuilder` instance.
+    pub fn set_base_url(mut self, base_url: &str) -> Self {
+        debug!("Base URL: {}", base_url);
+        self.base_url = base_url.to_string();
         self
     }
 
@@ -121,6 +151,8 @@ impl WazeRouteCalculatorBuilder {
             },
         );
 
+        debug!("Route options: {:?}", route_options);
+
         WazeRouteCalculator {
             region: self.region,
             vehicle_type: self.vehicle_type,
@@ -128,7 +160,7 @@ impl WazeRouteCalculatorBuilder {
             end_coords: None,
             avoid_subscription_roads: self.avoid_subscription_roads,
             route_options,
-            base_url: WazeRouteCalculator::WAZE_URL.to_string(),
+            base_url: self.base_url,
         }
     }
 }
@@ -142,25 +174,26 @@ pub struct WazeRouteCalculator {
     pub end_coords: Option<Coordinates>,
     route_options: HashMap<String, String>,
     avoid_subscription_roads: bool,
-
     base_url: String,
 }
 
 impl WazeRouteCalculator {
-/// Creates a new `WazeRouteCalculatorBuilder` with default values.
-///
-/// # Returns
-///
-/// A `WazeRouteCalculatorBuilder` instance with default settings.
-pub fn builder() -> WazeRouteCalculatorBuilder {
-    WazeRouteCalculatorBuilder {
-        region: Region::EU,
-        vehicle_type: VehicleType::CAR,
-        avoid_subscription_roads: false,
-        avoid_toll_roads: false,
-        avoid_ferries: false,
+    /// Creates a new `WazeRouteCalculatorBuilder` with default values.
+    ///
+    /// # Returns
+    ///
+    /// A `WazeRouteCalculatorBuilder` instance with default settings.
+    pub fn builder() -> WazeRouteCalculatorBuilder {
+        WazeRouteCalculatorBuilder {
+            region: Region::EU,
+            vehicle_type: VehicleType::CAR,
+            avoid_subscription_roads: false,
+            avoid_toll_roads: false,
+            avoid_ferries: false,
+            base_url: WazeRouteCalculator::WAZE_URL.to_string(),
+        }
     }
-}
+
     /// Sets the start and end coordinates based on the provided addresses.
     ///
     /// # Arguments
@@ -192,14 +225,6 @@ pub fn builder() -> WazeRouteCalculatorBuilder {
         );
 
         Ok(self)
-    }
-
-    pub fn with_base_url(&mut self, base_url: &str) -> &mut Self {
-        self.base_url = base_url.to_string();
-
-        debug!("Base URL: {}", base_url);
-
-        self
     }
 
     /// Constructs the headers required for the HTTP request.
@@ -524,12 +549,11 @@ mod tests {
             .match_query(mockito::Matcher::Any)
             .create();
 
-        let mut calculator = WazeRouteCalculator::builder()
+        let calculator = WazeRouteCalculator::builder()
             .set_region(Region::US)
             .set_vehicle_type(VehicleType::CAR)
+            .set_base_url(url.as_str())
             .build();
-
-        calculator.with_base_url(url.as_str());
 
         let result = calculator.address_to_coords("Test Address");
 
