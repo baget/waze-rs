@@ -4,11 +4,14 @@ use reqwest::header::{HeaderMap, HeaderValue, REFERER, USER_AGENT};
 use serde_json::Value;
 use std::collections::HashMap;
 use thiserror::Error;
+use tracing::debug;
+
 
 #[derive(Error, Debug)]
 pub enum WazeRouteCalculatorError {
     #[error("Failed to get coordinates")]
     FailedToGetCoordinates,
+
     #[error("Failed to get route")]
     FailedToGetRoute,
 
@@ -105,11 +108,27 @@ impl WazeRouteCalculator {
     ) -> Result<&mut Self, WazeRouteCalculatorError> {
         self.start_coords = Some(self.address_to_coords(start_address)?);
         self.end_coords = Some(self.address_to_coords(end_address)?);
+
+        debug!(
+            "Start coordinates: {}, {}",
+            self.start_coords.unwrap().latitude,
+            self.start_coords.unwrap().longitude
+        );
+
+        debug!(
+            "End coordinates: {}, {}",
+            self.end_coords.unwrap().latitude,
+            self.end_coords.unwrap().longitude
+        );
+
         Ok(self)
     }
 
     pub fn with_base_url(&mut self, base_url: &str) -> &mut Self {
         self.base_url = base_url.to_string();
+
+        debug!("Base URL: {}", base_url);
+
         self
     }
 
@@ -163,6 +182,8 @@ impl WazeRouteCalculator {
             .query(&params)
             .headers(self.construct_headers())
             .send()?;
+
+        debug!("Response: {:?}", response);
 
         if response.status().is_success() {
             let address_answer = response.json::<Value>()?;
@@ -255,6 +276,8 @@ impl WazeRouteCalculator {
             .query(&params)
             .headers(self.construct_headers())
             .send()?;
+
+        debug!("Response: {:?}", query_res);
 
         if query_res.status().is_success() {
             let waze_route_answer: Value = query_res.json()?;
@@ -372,6 +395,9 @@ impl WazeRouteCalculator {
 
         let (route_time, route_distance) = self.add_up_route(&route, true, false);
 
+        debug!("Route time: {}", route_time);
+        debug!("Route distance: {}", route_distance);
+
         Ok((
             std::time::Duration::from_secs(route_time as u64 * 60),
             route_distance,
@@ -399,8 +425,6 @@ mod tests {
 
     #[test]
     fn test_address_to_coords() {
-        let _ = env_logger::try_init();
-
         let opts = mockito::ServerOpts {
             host: "127.0.0.1",
             port: 1234,

@@ -1,8 +1,11 @@
+use tracing_subscriber;
 use waze_rs::helpers::{Region, VehicleType};
 use waze_rs::waze_route_calculator::WazeRouteCalculator;
 
 fn main() {
-    println!("Hello, world!");
+    tracing_subscriber::fmt::init();
+
+    println!("Hello Waze-rs!");
 
     let mut wrc = WazeRouteCalculator::new(Region::IL, VehicleType::CAR, false, false, false);
 
