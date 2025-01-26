@@ -4,7 +4,7 @@ use reqwest::header::{HeaderMap, HeaderValue, REFERER, USER_AGENT};
 use serde_json::Value;
 use std::collections::HashMap;
 use thiserror::Error;
-use tracing::debug;
+use tracing::{debug, error};
 
 
 #[derive(Error, Debug)]
@@ -164,6 +164,7 @@ impl WazeRouteCalculator {
         let get_cord_path = WazeRouteCalculator::COORD_SERVERS[self.region as usize].1;
 
         let url = format!("{}{}", self.base_url, get_cord_path);
+        debug!("URL: {}", url);
 
         let lon_binding = base_coords.lon.to_string();
         let lat_binding = base_coords.lat.to_string();
@@ -175,6 +176,8 @@ impl WazeRouteCalculator {
             ("lon", lon_binding.as_str()),
             ("lat", lat_binding.as_str()),
         ];
+
+        debug!("params: {:?}", params);
 
         let client = reqwest::blocking::Client::new();
         let response = client
@@ -189,6 +192,7 @@ impl WazeRouteCalculator {
             let address_answer = response.json::<Value>()?;
 
             if !address_answer.is_array() {
+                error!("Address answer is not an array");
                 return Err(WazeRouteCalculatorError::FailedToGetCoordinates);
             }
 
@@ -268,7 +272,10 @@ impl WazeRouteCalculator {
             params.push(("subscription", "*"));
         }
 
+        debug!("params: {:?}", params);
+
         let url = format!("{}{}", self.base_url, routing_server);
+        debug!("URL: {}", url);
 
         let client = reqwest::blocking::Client::new();
         let query_res = client
@@ -296,13 +303,16 @@ impl WazeRouteCalculator {
                     if let Some(results) = response.get("results") {
                         Ok(serde_json::from_value(results.clone())?)
                     } else {
+                        error!("'results' field not found");
                         Err(WazeRouteCalculatorError::FailedToGetRoute)
                     }
                 } else {
+                    error!("'response' field not found");
                     Err(WazeRouteCalculatorError::FailedToGetRoute)
                 }
             } else {
                 let error = waze_route_answer["error"].as_str().unwrap().to_string();
+                error!("Waze Error: {}", error);
                 Err(WazeRouteCalculatorError::WazeApiError(error))
             }
         } else {
