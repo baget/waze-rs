@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use thiserror::Error;
 use tracing::{debug, error};
 
-
 #[derive(Error, Debug)]
 pub enum WazeRouteCalculatorError {
     #[error("Failed to get coordinates")]
@@ -27,6 +26,113 @@ pub enum WazeRouteCalculatorError {
     #[error("Unknown error")]
     UnknownError,
 }
+
+/// A builder for the `WazeRouteCalculator` struct.
+#[derive(Debug)]
+pub struct WazeRouteCalculatorBuilder {
+    pub region: Region,
+    pub vehicle_type: VehicleType,
+    pub avoid_toll_roads: bool,
+    pub avoid_subscription_roads: bool,
+    pub avoid_ferries: bool,
+}
+
+impl WazeRouteCalculatorBuilder {
+    /// Sets the region for the route calculator.
+    ///
+    /// # Arguments
+    ///
+    /// * `region` - The region to set.
+    ///
+    /// # Returns
+    ///
+    /// The updated `WazeRouteCalculatorBuilder` instance.
+    pub fn set_region(mut self, region: Region) -> Self {
+        self.region = region;
+        self
+    }
+
+    /// Sets the vehicle type for the route calculator.
+    ///
+    /// # Arguments
+    ///
+    /// * `vehicle_type` - The vehicle type to set.
+    ///
+    /// # Returns
+    ///
+    /// The updated `WazeRouteCalculatorBuilder` instance.
+    pub fn set_vehicle_type(mut self, vehicle_type: VehicleType) -> Self {
+        self.vehicle_type = vehicle_type;
+        self
+    }
+
+    /// Sets the option to avoid subscription roads.
+    ///
+    /// # Returns
+    ///
+    /// The updated `WazeRouteCalculatorBuilder` instance.
+    pub fn set_avoid_subscription_roads(mut self) -> Self {
+        self.avoid_subscription_roads = true;
+        self
+    }
+
+    /// Sets the option to avoid toll roads.
+    ///
+    /// # Returns
+    ///
+    /// The updated `WazeRouteCalculatorBuilder` instance.
+    pub fn set_avoid_toll_roads(mut self) -> Self {
+        self.avoid_toll_roads = true;
+        self
+    }
+
+    /// Sets the option to avoid ferries.
+    ///
+    /// # Returns
+    ///
+    /// The updated `WazeRouteCalculatorBuilder` instance.
+    pub fn set_avoid_ferries(mut self) -> Self {
+        self.avoid_ferries = true;
+        self
+    }
+
+    /// Builds the `WazeRouteCalculator` instance.
+    ///
+    /// # Returns
+    ///
+    /// A `WazeRouteCalculator` instance with the configured options.
+    pub fn build(self) -> WazeRouteCalculator {
+        let mut route_options = HashMap::new();
+        route_options.insert("AVOID_TRAILS".to_string(), "t".to_string());
+        route_options.insert(
+            "AVOID_TOLL_ROADS".to_string(),
+            if self.avoid_toll_roads {
+                "t".to_string()
+            } else {
+                "f".to_string()
+            },
+        );
+        route_options.insert(
+            "AVOID_FERRIES".to_string(),
+            if self.avoid_ferries {
+                "t".to_string()
+            } else {
+                "f".to_string()
+            },
+        );
+
+        WazeRouteCalculator {
+            region: self.region,
+            vehicle_type: self.vehicle_type,
+            start_coords: None,
+            end_coords: None,
+            avoid_subscription_roads: self.avoid_subscription_roads,
+            route_options,
+            base_url: WazeRouteCalculator::WAZE_URL.to_string(),
+        }
+    }
+}
+
 /// A struct representing a Waze route calculator.
 #[derive(Debug)]
 pub struct WazeRouteCalculator {
@@ -41,56 +147,20 @@ pub struct WazeRouteCalculator {
 }
 
 impl WazeRouteCalculator {
-    /// Creates a new `WazeRouteCalculator` instance.
-    ///
-    /// # Arguments
-    ///
-    /// * `region` - The region for the route.
-    /// * `vehicle_type` - The type of vehicle.
-    /// * `avoid_toll_roads` - Whether to avoid toll roads.
-    /// * `avoid_subscription_roads` - Whether to avoid subscription roads.
-    /// * `avoid_ferries` - Whether to avoid ferries.
-    ///
-    /// # Returns
-    ///
-    /// A new `WazeRouteCalculator` instance.
-    pub fn new(
-        region: Region,
-        vehicle_type: VehicleType,
-        avoid_toll_roads: bool,
-        avoid_subscription_roads: bool,
-        avoid_ferries: bool,
-    ) -> Self {
-        let mut route_options = HashMap::new();
-        route_options.insert("AVOID_TRAILS".to_string(), "t".to_string());
-        route_options.insert(
-            "AVOID_TOLL_ROADS".to_string(),
-            if avoid_toll_roads {
-                "t".to_string()
-            } else {
-                "f".to_string()
-            },
-        );
-        route_options.insert(
-            "AVOID_FERRIES".to_string(),
-            if avoid_ferries {
-                "t".to_string()
-            } else {
-                "f".to_string()
-            },
-        );
-
-        WazeRouteCalculator {
-            region,
-            vehicle_type,
-            start_coords: None,
-            end_coords: None,
-            avoid_subscription_roads,
-            route_options,
-            base_url: Self::WAZE_URL.to_string(),
-        }
+/// Creates a new `WazeRouteCalculatorBuilder` with default values.
+///
+/// # Returns
+///
+/// A `WazeRouteCalculatorBuilder` instance with default settings.
+pub fn builder() -> WazeRouteCalculatorBuilder {
+    WazeRouteCalculatorBuilder {
+        region: Region::EU,
+        vehicle_type: VehicleType::CAR,
+        avoid_subscription_roads: false,
+        avoid_toll_roads: false,
+        avoid_ferries: false,
     }
-
+}
     /// Sets the start and end coordinates based on the provided addresses.
     ///
     /// # Arguments
@@ -454,8 +524,10 @@ mod tests {
             .match_query(mockito::Matcher::Any)
             .create();
 
-        let mut calculator =
-            WazeRouteCalculator::new(Region::US, VehicleType::CAR, false, false, false);
+        let mut calculator = WazeRouteCalculator::builder()
+            .set_region(Region::US)
+            .set_vehicle_type(VehicleType::CAR)
+            .build();
 
         calculator.with_base_url(url.as_str());
 
@@ -487,8 +559,10 @@ mod tests {
 
     #[test]
     fn test_add_up_route() {
-        let calculator =
-            WazeRouteCalculator::new(Region::US, VehicleType::CAR, false, false, false);
+        let calculator = WazeRouteCalculator::builder()
+            .set_region(Region::US)
+            .set_vehicle_type(VehicleType::CAR)
+            .build();
 
         let results = vec![create_mock_waze_result()];
 
