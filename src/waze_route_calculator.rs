@@ -204,7 +204,7 @@ impl WazeRouteCalculator {
     /// # Returns
     ///
     /// A result containing a mutable reference to the `WazeRouteCalculator` instance or an error.
-    pub fn with_address(
+    pub fn set_address(
         &mut self,
         start_address: &str,
         end_address: &str,

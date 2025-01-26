@@ -12,8 +12,8 @@ fn main() {
         .set_vehicle_type(VehicleType::CAR)
         .build();
 
-    wrc.with_address("Maale Adummim", "Tel Aviv, Israel")
-        .expect("with_address() failed");
+    wrc.set_address("Maale Adummim", "Tel Aviv, Israel")
+        .expect("set_address() failed");
 
     println!("{:?}", wrc);
     let res = wrc
