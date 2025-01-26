@@ -226,8 +226,10 @@ impl WazeRouteCalculator {
                     return Ok(coords);
                 }
             }
+            error!("Address answer not an array");
             Err(WazeRouteCalculatorError::FailedToGetCoordinates)
         } else {
+            error!("Address answer with status: {}", response.status());
             Err(WazeRouteCalculatorError::FailedToGetCoordinates)
         }
     }
