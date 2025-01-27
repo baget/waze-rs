@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use thiserror::Error;
 use tracing::{debug, error};
 
-
 #[derive(Error, Debug)]
 pub enum WazeRouteCalculatorError {
     #[error("Failed to get coordinates")]
@@ -27,6 +26,145 @@ pub enum WazeRouteCalculatorError {
     #[error("Unknown error")]
     UnknownError,
 }
+
+/// A builder for the `WazeRouteCalculator` struct.
+#[derive(Debug)]
+pub struct WazeRouteCalculatorBuilder {
+    pub region: Region,
+    pub vehicle_type: VehicleType,
+    pub avoid_toll_roads: bool,
+    pub avoid_subscription_roads: bool,
+    pub avoid_ferries: bool,
+    pub base_url: String,
+}
+
+impl WazeRouteCalculatorBuilder {
+    /// Sets the region for the route calculator.
+    ///
+    /// # Arguments
+    ///
+    /// * `region` - The region to set.
+    ///
+    /// # Returns
+    ///
+    /// The updated `WazeRouteCalculatorBuilder` instance.
+    pub fn set_region(mut self, region: Region) -> Self {
+        debug!("region: {:?}", region);
+        self.region = region;
+        self
+    }
+
+    /// Sets the vehicle type for the route calculator.
+    ///
+    /// # Arguments
+    ///
+    /// * `vehicle_type` - The vehicle type to set.
+    ///
+    /// # Returns
+    ///
+    /// The updated `WazeRouteCalculatorBuilder` instance.
+    pub fn set_vehicle_type(mut self, vehicle_type: VehicleType) -> Self {
+        debug!("vehicle_type: {:?}", vehicle_type);
+        self.vehicle_type = vehicle_type;
+        self
+    }
+
+    /// Sets whether to avoid subscription roads.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - A boolean indicating whether to avoid subscription roads.
+    ///
+    /// # Returns
+    ///
+    /// The updated `WazeRouteCalculatorBuilder` instance.
+    pub fn set_avoid_subscription_roads(mut self, value: bool) -> Self {
+        self.avoid_subscription_roads = value;
+        self
+    }
+
+    /// Sets whether to avoid toll roads.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - A boolean indicating whether to avoid toll roads.
+    ///
+    /// # Returns
+    ///
+    /// The updated `WazeRouteCalculatorBuilder` instance.
+    pub fn set_avoid_toll_roads(mut self, value: bool) -> Self {
+        self.avoid_toll_roads = value;
+        self
+    }
+
+    /// Sets whether to avoid ferries.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - A boolean indicating whether to avoid ferries.
+    ///
+    /// # Returns
+    ///
+    /// The updated `WazeRouteCalculatorBuilder` instance.
+    pub fn set_avoid_ferries(mut self, value: bool) -> Self {
+        self.avoid_ferries = value;
+        self
+    }
+
+    /// Sets the base URL for the route calculator.
+    ///
+    /// # Arguments
+    ///
+    /// * `base_url` - The base URL to set.
+    ///
+    /// # Returns
+    ///
+    /// The updated `WazeRouteCalculatorBuilder` instance.
+    pub fn set_base_url(mut self, base_url: &str) -> Self {
+        debug!("Base URL: {}", base_url);
+        self.base_url = base_url.to_string();
+        self
+    }
+
+    /// Builds the `WazeRouteCalculator` instance.
+    ///
+    /// # Returns
+    ///
+    /// A `WazeRouteCalculator` instance with the configured options.
+    pub fn build(self) -> WazeRouteCalculator {
+        let mut route_options = HashMap::new();
+        route_options.insert("AVOID_TRAILS".to_string(), "t".to_string());
+        route_options.insert(
+            "AVOID_TOLL_ROADS".to_string(),
+            if self.avoid_toll_roads {
+                "t".to_string()
+            } else {
+                "f".to_string()
+            },
+        );
+        route_options.insert(
+            "AVOID_FERRIES".to_string(),
+            if self.avoid_ferries {
+                "t".to_string()
+            } else {
+                "f".to_string()
+            },
+        );
+
+        debug!("Route options: {:?}", route_options);
+
+        WazeRouteCalculator {
+            region: self.region,
+            vehicle_type: self.vehicle_type,
+            start_coords: None,
+            end_coords: None,
+            avoid_subscription_roads: self.avoid_subscription_roads,
+            route_options,
+            base_url: self.base_url,
+        }
+    }
+}
+
 /// A struct representing a Waze route calculator.
 #[derive(Debug)]
 pub struct WazeRouteCalculator {
@@ -36,58 +174,23 @@ pub struct WazeRouteCalculator {
     pub end_coords: Option<Coordinates>,
     route_options: HashMap<String, String>,
     avoid_subscription_roads: bool,
-
     base_url: String,
 }
 
 impl WazeRouteCalculator {
-    /// Creates a new `WazeRouteCalculator` instance.
-    ///
-    /// # Arguments
-    ///
-    /// * `region` - The region for the route.
-    /// * `vehicle_type` - The type of vehicle.
-    /// * `avoid_toll_roads` - Whether to avoid toll roads.
-    /// * `avoid_subscription_roads` - Whether to avoid subscription roads.
-    /// * `avoid_ferries` - Whether to avoid ferries.
+    /// Creates a new `WazeRouteCalculatorBuilder` with default values.
     ///
     /// # Returns
     ///
-    /// A new `WazeRouteCalculator` instance.
-    pub fn new(
-        region: Region,
-        vehicle_type: VehicleType,
-        avoid_toll_roads: bool,
-        avoid_subscription_roads: bool,
-        avoid_ferries: bool,
-    ) -> Self {
-        let mut route_options = HashMap::new();
-        route_options.insert("AVOID_TRAILS".to_string(), "t".to_string());
-        route_options.insert(
-            "AVOID_TOLL_ROADS".to_string(),
-            if avoid_toll_roads {
-                "t".to_string()
-            } else {
-                "f".to_string()
-            },
-        );
-        route_options.insert(
-            "AVOID_FERRIES".to_string(),
-            if avoid_ferries {
-                "t".to_string()
-            } else {
-                "f".to_string()
-            },
-        );
-
-        WazeRouteCalculator {
-            region,
-            vehicle_type,
-            start_coords: None,
-            end_coords: None,
-            avoid_subscription_roads,
-            route_options,
-            base_url: Self::WAZE_URL.to_string(),
+    /// A `WazeRouteCalculatorBuilder` instance with default settings.
+    pub fn builder() -> WazeRouteCalculatorBuilder {
+        WazeRouteCalculatorBuilder {
+            region: Region::EU,
+            vehicle_type: VehicleType::CAR,
+            avoid_subscription_roads: false,
+            avoid_toll_roads: false,
+            avoid_ferries: false,
+            base_url: WazeRouteCalculator::WAZE_URL.to_string(),
         }
     }
 
@@ -101,7 +204,7 @@ impl WazeRouteCalculator {
     /// # Returns
     ///
     /// A result containing a mutable reference to the `WazeRouteCalculator` instance or an error.
-    pub fn with_address(
+    pub fn set_address(
         &mut self,
         start_address: &str,
         end_address: &str,
@@ -122,14 +225,6 @@ impl WazeRouteCalculator {
         );
 
         Ok(self)
-    }
-
-    pub fn with_base_url(&mut self, base_url: &str) -> &mut Self {
-        self.base_url = base_url.to_string();
-
-        debug!("Base URL: {}", base_url);
-
-        self
     }
 
     /// Constructs the headers required for the HTTP request.
@@ -454,10 +549,11 @@ mod tests {
             .match_query(mockito::Matcher::Any)
             .create();
 
-        let mut calculator =
-            WazeRouteCalculator::new(Region::US, VehicleType::CAR, false, false, false);
-
-        calculator.with_base_url(url.as_str());
+        let calculator = WazeRouteCalculator::builder()
+            .set_region(Region::US)
+            .set_vehicle_type(VehicleType::CAR)
+            .set_base_url(url.as_str())
+            .build();
 
         let result = calculator.address_to_coords("Test Address");
 
@@ -487,8 +583,10 @@ mod tests {
 
     #[test]
     fn test_add_up_route() {
-        let calculator =
-            WazeRouteCalculator::new(Region::US, VehicleType::CAR, false, false, false);
+        let calculator = WazeRouteCalculator::builder()
+            .set_region(Region::US)
+            .set_vehicle_type(VehicleType::CAR)
+            .build();
 
         let results = vec![create_mock_waze_result()];
 
