@@ -3,10 +3,10 @@ Calculate actual route time and distance with Waze API - based on Python [WazeRo
 
 Uses serde and reqwest to make requests to Waze API.
 
-![Crates.io Version](https://img.shields.io/crates/v/waze-rs)
-![Crates.io Downloads (latest version)](https://img.shields.io/crates/dv/waze-rs)
+[![Crates.io Version](https://img.shields.io/crates/v/waze-rs)](https://crates.io/crates/waze-rs)
+[![Crates.io Downloads (latest version)](https://img.shields.io/crates/dv/waze-rs)](https://crates.io/crates/waze-rs)
 
-![Crates.io License](https://img.shields.io/crates/l/waze-rs)
+[![Crates.io License](https://img.shields.io/crates/l/waze-rs)](https://github.com/baget/waze-rs/blob/main/LICENSE)
 
 ![GitHub Repo stars](https://img.shields.io/github/stars/baget/waze-rs)
 
