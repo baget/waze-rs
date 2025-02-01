@@ -2,14 +2,21 @@ use serde_derive::Deserialize;
 use serde_derive::Serialize;
 use serde_json::Value;
 
+/// Struct representing the coordinates of a location.
 #[derive(Copy, Clone, Default, Debug, PartialEq)]
 pub struct Coordinates {
+    /// The latitude of the location.
     pub latitude: f64,
+
+    /// The longitude of the location.
     pub longitude: f64,
+
+    /// The bounds of the location.
     pub bound: Option<Bound>,
 }
 
 impl From<WazeAddressCoordinates> for Coordinates {
+    /// Converts a `WazeAddressCoordinates` struct to a `Coordinates` struct.
     fn from(coord: WazeAddressCoordinates) -> Self {
         Coordinates {
             latitude: coord.lat,

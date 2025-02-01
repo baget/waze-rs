@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use thiserror::Error;
 use tracing::{debug, error};
 
+/// Waze route calculator error types.
 #[derive(Error, Debug)]
 pub enum WazeRouteCalculatorError {
     #[error("Failed to get coordinates")]
