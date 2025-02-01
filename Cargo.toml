@@ -7,10 +7,12 @@ license = "GPL-3.0-only"
 description = "Calculate actual route time and distance with Waze API"
 readme = "README.md"
 repository = "https://github.com/baget/waze-rs"
+documentation = "https://docs.rs/waze-rs"
 keywords = ["waze", "rust"]
 exclude = [
     ".github/*",
 ]
+
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
